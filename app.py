@@ -1,22 +1,44 @@
 # encoding:utf-8
 
 import os
-from config import conf, load_config
-from channel import channel_factory
-from common.log import logger
-from plugins import *
 import signal
 import sys
+import time
+
+from channel import channel_factory
+from common import const
+from config import load_config
+from plugins import *
+import threading
+
 
 def sigterm_handler_wrap(_signo):
     old_handler = signal.getsignal(_signo)
+
     def func(_signo, _stack_frame):
         logger.info("signal {} received, exiting...".format(_signo))
         conf().save_user_datas()
-        if callable(old_handler): #  check old_handler
+        if callable(old_handler):  #  check old_handler
             return old_handler(_signo, _stack_frame)
         sys.exit(0)
+
     signal.signal(_signo, func)
+
+
+def start_channel(channel_name: str):
+    channel = channel_factory.create_channel(channel_name)
+    if channel_name in ["wx", "wxy", "terminal", "wechatmp","web", "wechatmp_service", "wechatcom_app", "wework",
+                        const.FEISHU, const.DINGTALK]:
+        PluginManager().load_plugins()
+
+    if conf().get("use_linkai"):
+        try:
+            from common import linkai_client
+            threading.Thread(target=linkai_client.start, args=(channel,)).start()
+        except Exception as e:
+            pass
+    channel.startup()
+
 
 def run():
     try:
@@ -28,24 +50,22 @@ def run():
         sigterm_handler_wrap(signal.SIGTERM)
 
         # create channel
-        channel_name=conf().get('channel_type', 'wx')
+        channel_name = conf().get("channel_type", "wx")
 
         if "--cmd" in sys.argv:
-            channel_name = 'terminal'
+            channel_name = "terminal"
 
-        if channel_name == 'wxy':
-            os.environ['WECHATY_LOG']="warn"
-            # os.environ['WECHATY_PUPPET_SERVICE_ENDPOINT'] = '127.0.0.1:9001'
+        if channel_name == "wxy":
+            os.environ["WECHATY_LOG"] = "warn"
 
-        channel = channel_factory.create_channel(channel_name)
-        if channel_name in ['wx','wxy','terminal','wechatmp','wechatmp_service']:
-            PluginManager().load_plugins()
+        start_channel(channel_name)
 
-        # startup channel
-        channel.startup()
+        while True:
+            time.sleep(1)
     except Exception as e:
         logger.error("App startup failed!")
         logger.exception(e)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run()
